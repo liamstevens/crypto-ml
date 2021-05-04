@@ -83,9 +83,27 @@ class StateManager:
     '''
     def handle_messaging(self,conn):
         message = conn.recv(buffersize)
-
         while True:
             message = conn.recv(buffersize)
-
+            cmdword = message.split(',')[0]
+            #Detect node termination
+            if cmdword != 'worker_stop':
+                
+            #Handle node termination    
+            else:
+                
+    def parse_command(self,cmdword,message):
+        params = message.split(',')[1:]
+        commandwords = {
+        "create_transaction",
+        "complete_transaction",
+        "get_transaction",
+        "update_wallet",
+        "add_creds",
+        "update_creds",
+        "add_worker",
+        "update_worker",
+        "worker_stop"
+        }
     
 
