@@ -25,6 +25,7 @@ stateserver.bind(addr)
 
 class StateManager:
     _threads = {}
+    databaseconn = None
     '''
     Configure the State Manager to accept connections from worker nodes.
     '''
@@ -42,7 +43,8 @@ class StateManager:
         dbconn: a database connection object
     '''
     def connect_db(self):
-        dbconn = postgresql.open(f'pg://{dbuser}:{dbpass}@{dbhost}:{dbport}/{db}'
+        dbconn = postgresql.open(f'pg://{dbuser}:{dbpass}@{dbhost}:{dbport}/{db}')
+        self.databaseconn = dbconn
         return dbconn
     
     '''
@@ -55,10 +57,11 @@ class StateManager:
         None
     '''
     def create_db(self,dbname='trade',dbconn):
+        dbconn.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
         dbconn.execute('CREATE DATABASE '+dbname+' OWNER'+dbuser+';')
         dbconn.execute('CREATE SCHEMA cryptoml;')
         dbconn.execute('CREATE TABLE state ( guid, datetime, accountID, nodeID, num_worker, wallet_state, config);')
-        dbconn.execute('CREATE TABLE transaction ( guid, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid );')
+        dbconn.execute('CREATE TABLE transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid );')
         dbconn.execute('CREATE TABLE exchange_creds ( guid, config_guid, accesskey, accessID );')
         dbconn.execute('CREATE TABLE node_configuration ( guid, config_guid, strategy, nodeID, start_time );')
         dbconn.execute('CREATE TABLE configuration ( guid, base_investment, state_guid, nodeconf_guid, accountID, creds_guid, last_update, realise_value, realise_target );')
@@ -83,27 +86,32 @@ class StateManager:
     '''
     def handle_messaging(self,conn):
         message = conn.recv(buffersize)
+        commandwords = {
+        "create_transaction" : create_transaction,
+        "complete_transaction": complete_transaction,
+        "get_transaction": get_transaction,
+        "update_wallet": update_wallet,
+        "add_creds": add_creds,
+        "update_creds": update_creds,
+        "add_worker": add_worker,
+        "update_worker": update_worker,
+        "worker_stop": stop worker
+        }
         while True:
             message = conn.recv(buffersize)
-            cmdword = message.split(',')[0]
-            #Detect node termination
-            if cmdword != 'worker_stop':
-                
-            #Handle node termination    
+            if not message:
+                break
             else:
-                
-    def parse_command(self,cmdword,message):
-        params = message.split(',')[1:]
-        commandwords = {
-        "create_transaction",
-        "complete_transaction",
-        "get_transaction",
-        "update_wallet",
-        "add_creds",
-        "update_creds",
-        "add_worker",
-        "update_worker",
-        "worker_stop"
-        }
+                cmdword = message.split(',')[0]
+                func = commandwords.get(cmdword, lambda: "Invalid commandword")
+                func(message)
+
+    def create_transaction(self,message):
+        args = message.split(',')[1:]
+        str_args = ','.join(args)
+        dbconn.execute(f"INSERT INTO transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid )
+        VALUES (gen_random_uuid(),{str_args});" 
+
+        
     
 
