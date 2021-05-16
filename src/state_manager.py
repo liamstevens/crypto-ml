@@ -5,6 +5,8 @@ section of the Confluence.
 '''
 import postgresql
 import os
+import json
+import uuid
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 #Load in environment variables
@@ -25,7 +27,11 @@ stateserver.bind(addr)
 
 class StateManager:
     _threads = {}
-    databaseconn = None
+    dbconn = None
+    _guid = None
+    def __init__(self):
+        self._guid = str(uuid.uuid4())    
+
     '''
     Configure the State Manager to accept connections from worker nodes.
     '''
@@ -45,6 +51,7 @@ class StateManager:
     def connect_db(self):
         dbconn = postgresql.open(f'pg://{dbuser}:{dbpass}@{dbhost}:{dbport}/{db}')
         self.databaseconn = dbconn
+        self.dbconn = dbconn
         return dbconn
     
     '''
@@ -56,16 +63,16 @@ class StateManager:
     @return:
         None
     '''
-    def create_db(self,dbname='trade',dbconn):
-        dbconn.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
-        dbconn.execute('CREATE DATABASE '+dbname+' OWNER'+dbuser+';')
-        dbconn.execute('CREATE SCHEMA cryptoml;')
-        dbconn.execute('CREATE TABLE state ( guid, datetime, accountID, nodeID, num_worker, wallet_state, config);')
-        dbconn.execute('CREATE TABLE transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid );')
-        dbconn.execute('CREATE TABLE exchange_creds ( guid, config_guid, accesskey, accessID );')
-        dbconn.execute('CREATE TABLE node_configuration ( guid, config_guid, strategy, nodeID, start_time );')
-        dbconn.execute('CREATE TABLE configuration ( guid, base_investment, state_guid, nodeconf_guid, accountID, creds_guid, last_update, realise_value, realise_target );')
-        dbconn.execute('CREATE TABLE wallet_state ( guid, exchange, coin, volume, state_guid );')
+    def create_db(self,dbname='trade'):
+        self.dbconn.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
+        self.dbconn.execute('CREATE DATABASE '+dbname+' OWNER'+dbuser+';')
+        self.dbconn.execute('CREATE SCHEMA cryptoml;')
+        self.dbconn.execute('CREATE TABLE state ( guid, datetime, accountID, nodeID, num_worker, wallet_state, config);')
+        self.dbconn.execute('CREATE TABLE transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid );')
+        self.dbconn.execute('CREATE TABLE exchange_creds ( guid, config_guid, accesskey, accessID );')
+        self.dbconn.execute('CREATE TABLE node_configuration ( guid, config_guid, strategy, nodeID, start_time );')
+        self.dbconn.execute('CREATE TABLE configuration ( guid, base_investment, state_guid, nodeconf_guid, accountID, creds_guid, last_update, realise_value, realise_target );')
+        self.dbconn.execute('CREATE TABLE wallet_state ( guid, exchange, coin, volume, state_guid );')
     
     '''
     Handler for new connections to the State Manager. Forks off a handler thread for each connection.
@@ -104,14 +111,46 @@ class StateManager:
             else:
                 cmdword = message.split(',')[0]
                 func = commandwords.get(cmdword, lambda: "Invalid commandword")
-                func(message)
+                func(message,conn)
 
-    def create_transaction(self,message):
+    def create_transaction(self,message,conn):
         args = message.split(',')[1:]
         str_args = ','.join(args)
-        dbconn.execute(f"INSERT INTO transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid )
-        VALUES (gen_random_uuid(),{str_args});" 
-
-        
+        self.dbconn.execute(f"INSERT INTO transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid )
+        VALUES (gen_random_uuid(),{str_args},{self.guid});")
+        response = f"create_transaction,success,{args[0]}"
+        conn.send(response.encode('UTF-8'))
     
+    def complete_transaction(self,message,conn):
+        args = message.split(',')[1:]
+        self.dbconn.execute(f"UPDATE transaction SET (complete,complete_time) = ({args[1]}, {args[2]})
+        WHERE guid = {args[0]};")
+        response = f"complete_transaction,success,{args[0]}"
+        conn.send(response.encode('UTF-8'))
+
+    def get_transaction(self,message,conn):
+        args = message.split(',')[1:]
+        if ':' not in message:
+            response = self.dbconn.execute(f"SELECT ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete, complete_time)
+            FROM transaction
+            WHERE guid = {args[0]};")
+        else:
+            obj = json.loads(args[0])
+            keys = obj.keys()
+            qstr = ""
+            for key in keys:
+                qstr.append(key+" = "+obj[key])
+                if key != keys[-1]:
+                    qstr.append(" AND ")
+            response = self.dbconn.execute(f"SELECT ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete, complete_time)
+            FROM transaction
+            WHERE {qstr};")
+        conn.send(response.encode('UTF-8'))
+
+    def update_wallet(self,message,conn):
+        args = message.split(',')[1:]
+        self.dbconn.execute(f"UPDATE wallet SET (coin, volume) = ({args[1]}, {args[2]}) WHERE guid = {args[0]}";)
+        response = f"update_wallet,success,{args[0]}"
+        conn.send(response.encode('UTF-8'))
+
 
