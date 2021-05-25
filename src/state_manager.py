@@ -65,15 +65,15 @@ class StateManager:
     '''
     def create_db(self,dbname='trade'):
         self.dbconn.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
-        self.dbconn.execute('CREATE DATABASE '+dbname+' OWNER'+dbuser+';')
-        self.dbconn.execute('CREATE SCHEMA cryptoml;')
-        self.dbconn.execute('CREATE TABLE state ( guid, datetime, accountID, nodeID, num_worker, wallet_state, config);')
-        self.dbconn.execute('CREATE TABLE transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid );')
-        self.dbconn.execute('CREATE TABLE exchange_creds ( guid, config_guid, accesskey, accessID );')
-        self.dbconn.execute('CREATE TABLE node_configuration ( guid, config_guid, strategy, nodeID, start_time );')
-        self.dbconn.execute('CREATE TABLE configuration ( guid, base_investment, state_guid, nodeconf_guid, accountID, creds_guid, last_update, realise_value, realise_target );')
-        self.dbconn.execute('CREATE TABLE wallet_state ( guid, exchange, coin, volume, state_guid );')
-        self.dbconn.execute('CREATE TABLE worker ( guid, start, strategy, config_guid, nodeID);')
+        self.dbconn.execute('CREATE DATABASE IF NOT EXISTS '+dbname+' OWNER'+dbuser+';')
+        self.dbconn.execute('CREATE SCHEMA IF NOT EXISTS cryptoml;')
+        self.dbconn.execute('CREATE TABLE IF NOT EXISTS cryptoml.state ( guid uuid primary key, datetime timestamp, accountID varchar(20), nodeID int, num_worker int, wallet_state uuid, config uuid);')
+        self.dbconn.execute('CREATE TABLE IF NOT EXISTS cryptoml.transaction ( guid uuid primary key, exchange varchar(20), creation_time timestamp, source varchar(8), destination varchar(8), vol_s numeric, vol_d numeric, complete boolean,complete_time timestamp, stateguid uuid);')
+        self.dbconn.execute('CREATE TABLE IF NOT EXISTS cryptoml.exchange_creds ( guid uuid primary key, config_guid uuid, accesskey varchar(30), accessID varchar(30));')
+        self.dbconn.execute('CREATE TABLE IF NOT EXISTS cryptoml.node_configuration ( guid uuid primary key, config_guid, strategy, nodeID, start_time );')
+        self.dbconn.execute('CREATE TABLE IF NOT EXISTS cryptoml.configuration ( guid uuid primary key, base_investment numeric, state_guid uuid, nodeconf_guid uuid, accountID varchar(20), creds_guid uuid, last_update timestamp, realise_value boolean, realise_target numeric );')
+        self.dbconn.execute('CREATE TABLE IF NOT EXISTS cryptoml.wallet_state ( guid uuid primary key, exchange varchar(20), coin varchar(8), volume numeric, state_guid uuid);')
+        self.dbconn.execute('CREATE TABLE IF NOT EXISTS cryptoml.worker ( guid uuid primary key, start timestamp, strategy varchar(20), config_guid uuid, nodeID);')
     
     '''
     Handler for new connections to the State Manager. Forks off a handler thread for each connection.
@@ -103,7 +103,7 @@ class StateManager:
         "update_creds": update_creds,
         "add_worker": add_worker,
         "update_worker": update_worker,
-        "worker_stop": stop worker
+        "worker_stop": stop_worker
         }
         while True:
             message = conn.recv(buffersize)
@@ -117,17 +117,17 @@ class StateManager:
     def create_transaction(self,message,conn):
         args = message.split(',')[1:]
         str_args = ','.join(args)
-        self.dbconn.execute(f"INSERT INTO transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid )
-        VALUES (gen_random_uuid(),{str_args},{self.guid});")
-        response = f"create_transaction,success,{args[0]}"
-        conn.send(response.encode('UTF-8'))
-    
+        if self.dbconn.execute(f"INSERT INTO transaction ( guid, exchange, creation_time, source, destination, vol_s, vol_d, complete,complete_time, stateguid )
+        VALUES (gen_random_uuid(),{str_args},{self.guid});"):
+            response = f"create_transaction,success,{args[0]}"
+            conn.send(response.encode('UTF-8'))
+        
     def complete_transaction(self,message,conn):
         args = message.split(',')[1:]
-        self.dbconn.execute(f"UPDATE transaction SET (complete,complete_time) = ({args[1]}, {args[2]})
-        WHERE guid = {args[0]};")
-        response = f"complete_transaction,success,{args[0]}"
-        conn.send(response.encode('UTF-8'))
+        if self.dbconn.execute(f"UPDATE transaction SET (complete,complete_time) = ({args[1]}, {args[2]})
+        WHERE guid = {args[0]};"):
+            response = f"complete_transaction,success,{args[0]}"
+            conn.send(response.encode('UTF-8'))
 
     def get_transaction(self,message,conn):
         args = message.split(',')[1:]
@@ -150,22 +150,31 @@ class StateManager:
 
     def update_wallet(self,message,conn):
         args = message.split(',')[1:]
-        self.dbconn.execute(f"UPDATE wallet SET (coin, volume) = ({args[1]}, {args[2]}) WHERE guid = {args[0]};")
-        response = f"update_wallet,success,{args[0]}"
-        conn.send(response.encode('UTF-8'))
+        if self.dbconn.execute(f"UPDATE wallet SET (coin, volume) = ({args[1]}, {args[2]}) WHERE guid = {args[0]};"):
+            response = f"update_wallet,success,{args[0]}"
+            conn.send(response.encode('UTF-8'))
 
     def add_creds(self,message,conn):
         args = message.split(',')[1:]
-        self.dbconn.execute(f"INSERT INTO exchange_creds (guid,config_guid,accesskey,accessID) VALUES (gen_random_uuid(),{args[2]},{args[1]},{args[0]};"
+        if self.dbconn.execute(f"INSERT INTO exchange_creds (guid,config_guid,accesskey,accessID) VALUES (gen_random_uuid(),{args[2]},{args[1]},{args[0]});"):
+            response = f"add_creds,success,{args[3]}
+            conn.send(response.encode('UTF-8'))
 
     def update_creds(self,message,conn):
         args = message.split(',')[1:]
-        self.dbconn.execute(f"UPDATE exchange_creds SET (accesskey, accessID) = ({args[2]}, {args[1]}) WHERE config_guid = {args[0]};")
+        if self.dbconn.execute(f"UPDATE exchange_creds SET (accesskey, accessID) = ({args[2]}, {args[1]}) WHERE config_guid = {args[0]};"):
+            response = f"update_creds,success,{args[0]}"
+            conn.send(response.encode('UTF-8'))
 
     def add_worker(self,message,conn):
         args = message.split(',')[1:]
-        self.dbconn.execute(f"INSERT INTO ";)
+        if self.dbconn.execute(f"INSERT INTO worker (guid, start, strategy, config_guid, nodeID) VALUES (gen_random_uuid(), {args[0]}, {args[1]}, {args[2]}, {args[3]});"):
+            response = f"add_worker,success,{args[3]}"
+            conn.send(response.encode('UTF-8'))
 
     def update_worker(self,message,conn):
         args = message.split(','[1:]
-        self.dbconn.execute(f"UPDATE worker
+        if self.dbconn.execute(f"UPDATE worker SET (strategy, config_guid) = ({args[0]}, {args[1]}) WHERE nodeID = {args[2]};"):
+            response = f"update_worker,success,{args[2]}"
+            conn.send(response.encode('UTF-8'))
+
