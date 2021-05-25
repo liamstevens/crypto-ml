@@ -73,6 +73,7 @@ class StateManager:
         self.dbconn.execute('CREATE TABLE node_configuration ( guid, config_guid, strategy, nodeID, start_time );')
         self.dbconn.execute('CREATE TABLE configuration ( guid, base_investment, state_guid, nodeconf_guid, accountID, creds_guid, last_update, realise_value, realise_target );')
         self.dbconn.execute('CREATE TABLE wallet_state ( guid, exchange, coin, volume, state_guid );')
+        self.dbconn.execute('CREATE TABLE worker ( guid, start, strategy, config_guid, nodeID);')
     
     '''
     Handler for new connections to the State Manager. Forks off a handler thread for each connection.
@@ -149,8 +150,22 @@ class StateManager:
 
     def update_wallet(self,message,conn):
         args = message.split(',')[1:]
-        self.dbconn.execute(f"UPDATE wallet SET (coin, volume) = ({args[1]}, {args[2]}) WHERE guid = {args[0]}";)
+        self.dbconn.execute(f"UPDATE wallet SET (coin, volume) = ({args[1]}, {args[2]}) WHERE guid = {args[0]};")
         response = f"update_wallet,success,{args[0]}"
         conn.send(response.encode('UTF-8'))
 
+    def add_creds(self,message,conn):
+        args = message.split(',')[1:]
+        self.dbconn.execute(f"INSERT INTO exchange_creds (guid,config_guid,accesskey,accessID) VALUES (gen_random_uuid(),{args[2]},{args[1]},{args[0]};"
 
+    def update_creds(self,message,conn):
+        args = message.split(',')[1:]
+        self.dbconn.execute(f"UPDATE exchange_creds SET (accesskey, accessID) = ({args[2]}, {args[1]}) WHERE config_guid = {args[0]};")
+
+    def add_worker(self,message,conn):
+        args = message.split(',')[1:]
+        self.dbconn.execute(f"INSERT INTO ";)
+
+    def update_worker(self,message,conn):
+        args = message.split(','[1:]
+        self.dbconn.execute(f"UPDATE worker
