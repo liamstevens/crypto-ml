@@ -7,6 +7,11 @@
 node_modules/
 dist/
 
+# venv files
+Lib/
+Scripts/
+pyvenv.cfg
+
 # Compiled Java class files
 *.class
 
